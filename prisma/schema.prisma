@@ -1,0 +1,78 @@
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+
+
+model Patient {
+  id          String   @id @default(uuid())
+  name        String
+  phone       String   @unique
+  dob         DateTime
+  medicalHistory String? // "Allergic to Penicillin"
+  createdAt   DateTime @default(now())
+  
+  visits      Visit[]
+  invoices    Invoice[]
+}
+
+// The "Treatment Menu" - Your Price List
+model TreatmentCatalog {
+  id            String @id @default(uuid())
+  name          String // e.g., "Root Canal (Molar)"
+  standardCost  Decimal
+  category      String // "Restorative", "Cosmetic"
+  
+  // Relations
+  performedIn   PerformedTreatment[]
+}
+
+// A single appointment/visit
+model Visit {
+  id          String   @id @default(uuid())
+  date        DateTime @default(now())
+  chiefComplaint String
+  diagnosis      String?
+  notes          String? // Clinical notes
+  
+  patientId   String
+  patient     Patient @relation(fields: [patientId], references: [id])
+  
+  // What did we actually do this visit?
+  treatments  PerformedTreatment[]
+  invoice     Invoice?
+}
+
+// The link between a Visit and the Catalog
+model PerformedTreatment {
+  id                  String @id @default(uuid())
+  visitId             String
+  visit               Visit  @relation(fields: [visitId], references: [id])
+  
+  treatmentCatalogId  String
+  treatmentDetails    TreatmentCatalog @relation(fields: [treatmentCatalogId], references: [id])
+  
+  toothNumber         String? // e.g., "18", "21" (Optional for general treatments)
+  costAtTime          Decimal // Store cost HERE to freeze price history
+}
+
+// The Financials
+model Invoice {
+  id          String   @id @default(uuid())
+  totalAmount Decimal
+  paidAmount  Decimal  @default(0)
+  status      String   @default("UNPAID") // "PAID", "PARTIAL"
+  
+  visitId     String   @unique
+  visit       Visit    @relation(fields: [visitId], references: [id])
+  
+  patientId   String
+  patient     Patient  @relation(fields: [patientId], references: [id])
+}
