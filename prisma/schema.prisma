@@ -1,78 +1,329 @@
-
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
   provider = "postgresql"
-  url = env("DATABASE_URL")
 }
 
+// ============================================
+// MULTI-TENANT CLINIC MODEL
+// ============================================
 
+model Clinic {
+  id        String   @id @default(uuid())
+  name      String
+  logo      String?
+  address   String?
+  phone     String?
+  email     String?
+  settings  Json?    // Clinic-specific settings (timezone, currency, etc.)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  users        User[]
+  patients     Patient[]
+  appointments Appointment[]
+  treatments   TreatmentCatalog[]
+  invoices     Invoice[]
+}
+
+// ============================================
+// USER & RBAC
+// ============================================
+
+enum UserRole {
+  SUPERADMIN
+  ADMIN
+  DOCTOR
+  STAFF
+}
+
+model User {
+  id        String   @id @default(uuid())
+  clerkId   String   @unique // External auth provider ID
+  email     String   @unique
+  firstName String
+  lastName  String
+  role      UserRole @default(STAFF)
+  phone     String?
+  avatarUrl String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clinicId String?
+  clinic   Clinic? @relation(fields: [clinicId], references: [id])
+
+  // Relations
+  appointments    Appointment[]    @relation("DoctorAppointments")
+  clinicalRecords ClinicalRecord[]
+  auditLogs       AuditLog[]
+
+  @@index([clinicId])
+  @@index([clerkId])
+}
+
+// ============================================
+// PATIENT
+// ============================================
 
 model Patient {
-  id          String   @id @default(uuid())
-  name        String
-  phone       String   @unique
-  dob         DateTime
-  medicalHistory String? // "Allergic to Penicillin"
-  createdAt   DateTime @default(now())
-  
-  visits      Visit[]
-  invoices    Invoice[]
-}
+  id             String    @id @default(uuid())
+  firstName      String
+  lastName       String
+  email          String?
+  phone          String
+  dateOfBirth    DateTime
+  gender         String?   // "Male", "Female", "Other"
+  address        String?
+  medicalHistory Json?     // Structured: { conditions: [], medications: [], surgeries: [] }
+  allergies      String[]  // Array of allergies
+  notes          String?
+  lastVisitDate  DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-// The "Treatment Menu" - Your Price List
-model TreatmentCatalog {
-  id            String @id @default(uuid())
-  name          String // e.g., "Root Canal (Molar)"
-  standardCost  Decimal
-  category      String // "Restorative", "Cosmetic"
-  
+  clinicId String
+  clinic   Clinic @relation(fields: [clinicId], references: [id])
+
   // Relations
-  performedIn   PerformedTreatment[]
+  appointments    Appointment[]
+  clinicalRecords ClinicalRecord[]
+  invoices        Invoice[]
+
+  @@index([clinicId])
+  @@index([phone])
+  @@index([lastName, firstName])
 }
 
-// A single appointment/visit
-model Visit {
-  id          String   @id @default(uuid())
-  date        DateTime @default(now())
-  chiefComplaint String
-  diagnosis      String?
-  notes          String? // Clinical notes
-  
-  patientId   String
-  patient     Patient @relation(fields: [patientId], references: [id])
-  
-  // What did we actually do this visit?
-  treatments  PerformedTreatment[]
-  invoice     Invoice?
+// ============================================
+// APPOINTMENTS
+// ============================================
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  SEATED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
 }
 
-// The link between a Visit and the Catalog
-model PerformedTreatment {
-  id                  String @id @default(uuid())
-  visitId             String
-  visit               Visit  @relation(fields: [visitId], references: [id])
-  
-  treatmentCatalogId  String
-  treatmentDetails    TreatmentCatalog @relation(fields: [treatmentCatalogId], references: [id])
-  
-  toothNumber         String? // e.g., "18", "21" (Optional for general treatments)
-  costAtTime          Decimal // Store cost HERE to freeze price history
+enum AppointmentType {
+  CHECKUP
+  TREATMENT
+  EMERGENCY
+  FOLLOW_UP
+  CONSULTATION
 }
 
-// The Financials
+model Appointment {
+  id             String            @id @default(uuid())
+  scheduledAt    DateTime
+  duration       Int               @default(30) // minutes
+  status         AppointmentStatus @default(SCHEDULED)
+  type           AppointmentType   @default(CHECKUP)
+  chiefComplaint String?
+  notes          String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id])
+
+  doctorId String
+  doctor   User @relation("DoctorAppointments", fields: [doctorId], references: [id])
+
+  clinicId String
+  clinic   Clinic @relation(fields: [clinicId], references: [id])
+
+  // Relations
+  clinicalRecords ClinicalRecord[]
+  invoice         Invoice?
+
+  @@index([clinicId])
+  @@index([doctorId])
+  @@index([patientId])
+  @@index([scheduledAt])
+  @@index([status])
+}
+
+// ============================================
+// CLINICAL RECORDS (HEART OF THE APP)
+// ============================================
+
+model ClinicalRecord {
+  id           String   @id @default(uuid())
+  toothNumber  String?  // FDI notation: "18", "21", etc.
+  surface      String?  // "MOD", "B", "L", "O", "D", "M"
+  diagnosis    String?
+  notes        String?
+  costOverride Decimal? // Manual price override
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  appointmentId String
+  appointment   Appointment @relation(fields: [appointmentId], references: [id])
+
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id])
+
+  procedureId String
+  procedure   TreatmentCatalog @relation(fields: [procedureId], references: [id])
+
+  createdById String
+  createdBy   User @relation(fields: [createdById], references: [id])
+
+  // Relations
+  invoiceItem InvoiceItem?
+
+  @@index([appointmentId])
+  @@index([patientId])
+  @@index([toothNumber])
+}
+
+// ============================================
+// TREATMENT CATALOG (MENU OF SERVICES)
+// ============================================
+
+model TreatmentCatalog {
+  id           String   @id @default(uuid())
+  code         String?  // Service code (e.g., "D2391")
+  name         String   // "Root Canal (Molar)"
+  description  String?
+  standardCost Decimal
+  category     String   // "Restorative", "Cosmetic", "Preventive", "Endodontic"
+  duration     Int?     // Estimated duration in minutes
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  clinicId String
+  clinic   Clinic @relation(fields: [clinicId], references: [id])
+
+  // Relations
+  clinicalRecords ClinicalRecord[]
+
+  @@index([clinicId])
+  @@index([category])
+  @@index([isActive])
+}
+
+// ============================================
+// INVOICES & BILLING
+// ============================================
+
+enum InvoiceStatus {
+  DRAFT
+  PENDING
+  PARTIAL
+  PAID
+  CANCELLED
+  REFUNDED
+}
+
 model Invoice {
+  id            String        @id @default(uuid())
+  invoiceNumber String        @unique
+  subtotal      Decimal
+  discount      Decimal       @default(0)
+  discountType  String?       // "percentage" or "fixed"
+  tax           Decimal       @default(0)
+  total         Decimal
+  amountPaid    Decimal       @default(0)
+  status        InvoiceStatus @default(DRAFT)
+  dueDate       DateTime?
+  notes         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id])
+
+  appointmentId String?      @unique
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
+
+  clinicId String
+  clinic   Clinic @relation(fields: [clinicId], references: [id])
+
+  // Relations
+  items    InvoiceItem[]
+  payments Payment[]
+
+  @@index([clinicId])
+  @@index([patientId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model InvoiceItem {
   id          String   @id @default(uuid())
-  totalAmount Decimal
-  paidAmount  Decimal  @default(0)
-  status      String   @default("UNPAID") // "PAID", "PARTIAL"
-  
-  visitId     String   @unique
-  visit       Visit    @relation(fields: [visitId], references: [id])
-  
-  patientId   String
-  patient     Patient  @relation(fields: [patientId], references: [id])
+  description String
+  quantity    Int      @default(1)
+  unitPrice   Decimal
+  total       Decimal
+  createdAt   DateTime @default(now())
+
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  clinicalRecordId String?         @unique
+  clinicalRecord   ClinicalRecord? @relation(fields: [clinicalRecordId], references: [id])
+
+  @@index([invoiceId])
+}
+
+// ============================================
+// PAYMENTS (SPLIT PAYMENTS)
+// ============================================
+
+enum PaymentMethod {
+  CASH
+  CARD
+  UPI
+  BANK_TRANSFER
+  INSURANCE
+  OTHER
+}
+
+model Payment {
+  id        String        @id @default(uuid())
+  amount    Decimal
+  method    PaymentMethod
+  reference String?       // Transaction ID, UPI ref, etc.
+  notes     String?
+  paidAt    DateTime      @default(now())
+
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
+
+  @@index([invoiceId])
+  @@index([paidAt])
+}
+
+// ============================================
+// AUDIT LOG
+// ============================================
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  action     String   // "CREATE", "UPDATE", "DELETE"
+  entityType String   // "ClinicalRecord", "Invoice", etc.
+  entityId   String
+  oldValue   Json?
+  newValue   Json?
+  reason     String?  // For price overrides, etc.
+  createdAt  DateTime @default(now())
+
+  userId String
+  user   User @relation(fields: [userId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
 }
