@@ -1,6 +1,6 @@
 "use client"
 
-import { useForm } from "react-hook-form"
+import { useForm, SubmitHandler, FieldValues } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { patientFormSchema, type PatientFormValues } from "@/lib/validations/patient"
 import { Button } from "@/components/ui/button"
@@ -25,7 +25,7 @@ export function PatientForm({
         register,
         handleSubmit,
         formState: { errors },
-    } = useForm<PatientFormValues>({
+    } = useForm({
         resolver: zodResolver(patientFormSchema),
         defaultValues: {
             firstName: "",
@@ -34,14 +34,18 @@ export function PatientForm({
             phone: "",
             gender: undefined,
             address: "",
-            allergies: [],
+            allergies: [] as string[],
             notes: "",
             ...defaultValues,
         },
     })
 
+    const handleFormSubmit: SubmitHandler<FieldValues> = async (data) => {
+        await onSubmit(data as PatientFormValues)
+    }
+
     return (
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                     <Label htmlFor="firstName">First Name *</Label>
@@ -51,7 +55,7 @@ export function PatientForm({
                         {...register("firstName")}
                     />
                     {errors.firstName && (
-                        <p className="text-sm text-destructive">{errors.firstName.message}</p>
+                        <p className="text-sm text-destructive">{errors.firstName.message as string}</p>
                     )}
                 </div>
 
@@ -63,7 +67,7 @@ export function PatientForm({
                         {...register("lastName")}
                     />
                     {errors.lastName && (
-                        <p className="text-sm text-destructive">{errors.lastName.message}</p>
+                        <p className="text-sm text-destructive">{errors.lastName.message as string}</p>
                     )}
                 </div>
             </div>
@@ -77,7 +81,7 @@ export function PatientForm({
                         {...register("phone")}
                     />
                     {errors.phone && (
-                        <p className="text-sm text-destructive">{errors.phone.message}</p>
+                        <p className="text-sm text-destructive">{errors.phone.message as string}</p>
                     )}
                 </div>
 
@@ -90,7 +94,7 @@ export function PatientForm({
                         {...register("email")}
                     />
                     {errors.email && (
-                        <p className="text-sm text-destructive">{errors.email.message}</p>
+                        <p className="text-sm text-destructive">{errors.email.message as string}</p>
                     )}
                 </div>
             </div>
@@ -101,10 +105,10 @@ export function PatientForm({
                     <Input
                         id="dateOfBirth"
                         type="date"
-                        {...register("dateOfBirth", { valueAsDate: true })}
+                        {...register("dateOfBirth")}
                     />
                     {errors.dateOfBirth && (
-                        <p className="text-sm text-destructive">{errors.dateOfBirth.message}</p>
+                        <p className="text-sm text-destructive">{errors.dateOfBirth.message as string}</p>
                     )}
                 </div>
 

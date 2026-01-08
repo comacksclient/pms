@@ -66,5 +66,5 @@ export async function getTreatmentCategories(clinicId: string) {
         select: { category: true },
         distinct: ["category"],
     })
-    return treatments.map((t) => t.category)
+    return treatments.map((t: { category: string }) => t.category)
 }

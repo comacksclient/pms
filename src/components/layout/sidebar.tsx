@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useUser, useClerk } from "@clerk/nextjs"
 import {
     LayoutDashboard,
     Calendar,
@@ -16,7 +17,6 @@ import {
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Separator } from "@/components/ui/separator"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useState } from "react"
 
@@ -55,6 +55,12 @@ interface SidebarProps {
 export function Sidebar({ className }: SidebarProps) {
     const pathname = usePathname()
     const [collapsed, setCollapsed] = useState(false)
+    const { user, isLoaded } = useUser()
+    const { signOut } = useClerk()
+
+    const handleSignOut = () => {
+        signOut({ redirectUrl: '/sign-in' })
+    }
 
     return (
         <div
@@ -125,15 +131,22 @@ export function Sidebar({ className }: SidebarProps) {
                     collapsed && "justify-center"
                 )}>
                     <Avatar className="h-8 w-8">
-                        <AvatarImage src="" />
+                        <AvatarImage src={user?.imageUrl} />
                         <AvatarFallback className="bg-sidebar-accent text-sidebar-accent-foreground text-xs">
-                            DR
+                            {isLoaded && user ?
+                                `${user.firstName?.[0] || ''}${user.lastName?.[0] || ''}` :
+                                '...'
+                            }
                         </AvatarFallback>
                     </Avatar>
                     {!collapsed && (
                         <div className="flex flex-1 flex-col overflow-hidden">
-                            <span className="truncate text-sm font-medium">Dr. Smith</span>
-                            <span className="truncate text-xs text-sidebar-foreground/60">Doctor</span>
+                            <span className="truncate text-sm font-medium">
+                                {isLoaded && user ? `${user.firstName} ${user.lastName}` : 'Loading...'}
+                            </span>
+                            <span className="truncate text-xs text-sidebar-foreground/60">
+                                {user?.primaryEmailAddress?.emailAddress || ''}
+                            </span>
                         </div>
                     )}
                     {!collapsed && (
@@ -141,6 +154,7 @@ export function Sidebar({ className }: SidebarProps) {
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8 shrink-0 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                            onClick={handleSignOut}
                         >
                             <LogOut className="h-4 w-4" />
                         </Button>

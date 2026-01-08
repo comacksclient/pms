@@ -7,8 +7,19 @@ import { PatientTable } from "@/components/patients/patient-table"
 import { QuickAddPatientSheet } from "@/components/patients/quick-add-sheet"
 import type { PatientFormValues } from "@/lib/validations/patient"
 
+interface MockPatient {
+    id: string
+    firstName: string
+    lastName: string
+    phone: string
+    email?: string | null
+    dateOfBirth: Date
+    gender?: string | null
+    lastVisitDate?: Date | null
+}
+
 // Mock data for demonstration
-const mockPatients = [
+const mockPatients: MockPatient[] = [
     {
         id: "1",
         firstName: "Rahul",
@@ -64,14 +75,18 @@ const mockPatients = [
 export default function PatientsPage() {
     const router = useRouter()
     const [isAddSheetOpen, setIsAddSheetOpen] = useState(false)
-    const [patients, setPatients] = useState(mockPatients)
+    const [patients, setPatients] = useState<MockPatient[]>(mockPatients)
 
     const handleAddPatient = async (data: PatientFormValues) => {
         // In real app, this would call the server action
-        const newPatient = {
+        const newPatient: MockPatient = {
             id: String(patients.length + 1),
-            ...data,
+            firstName: data.firstName,
+            lastName: data.lastName,
+            phone: data.phone,
             email: data.email || null,
+            dateOfBirth: data.dateOfBirth,
+            gender: data.gender || null,
             lastVisitDate: null,
         }
         setPatients([newPatient, ...patients])
