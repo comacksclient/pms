@@ -38,14 +38,6 @@ export function Header({ title, description, children, action }: HeaderProps) {
                     />
                 </div>
 
-                {/* Notifications */}
-                <Button variant="ghost" size="icon" className="relative">
-                    <Bell className="h-5 w-5" />
-                    <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-medium text-destructive-foreground">
-                        3
-                    </span>
-                </Button>
-
                 {children}
 
                 {/* Primary action */}

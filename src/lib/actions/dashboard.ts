@@ -121,11 +121,13 @@ export async function getDashboardStats(clinicId: string) {
 }
 
 export async function getUpcomingAppointments(clinicId: string) {
-    const now = new Date()
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
     return await prisma.appointment.findMany({
         where: {
             clinicId,
-            scheduledAt: { gte: now },
+            scheduledAt: { gte: today },
             status: { in: ["SCHEDULED", "CONFIRMED", "SEATED"] },
         },
         include: {
@@ -184,4 +186,90 @@ export async function getRecentActivity(clinicId: string) {
     ].sort((a, b) => b.time.getTime() - a.time.getTime()).slice(0, 5)
 
     return activities
+}
+
+export async function getRevenueChartData(clinicId: string) {
+    const today = new Date()
+    const months = []
+
+    // Get last 6 months
+    for (let i = 5; i >= 0; i--) {
+        const d = new Date(today.getFullYear(), today.getMonth() - i, 1)
+        months.push({
+            date: d,
+            label: d.toLocaleString('default', { month: 'short' }),
+            start: startOfMonth(d),
+            end: endOfMonth(d)
+        })
+    }
+
+    const data = await Promise.all(months.map(async (m) => {
+        const result = await prisma.payment.aggregate({
+            where: {
+                invoice: { clinicId },
+                paidAt: {
+                    gte: m.start,
+                    lte: m.end
+                }
+            },
+            _sum: { amount: true }
+        })
+        return {
+            name: m.label,
+            value: result._sum.amount ? Number(result._sum.amount) : 0
+        }
+    }))
+
+    return data
+}
+
+export async function getAppointmentStatusDistribution(clinicId: string) {
+    const statusCounts = await prisma.appointment.groupBy({
+        by: ['status'],
+        where: { clinicId },
+        _count: { status: true }
+    })
+
+    return statusCounts.map(item => ({
+        name: item.status.charAt(0) + item.status.slice(1).toLowerCase(),
+        value: item._count.status,
+        color:
+            item.status === 'COMPLETED' ? 'bg-emerald-500' :
+                item.status === 'SCHEDULED' ? 'bg-blue-500' :
+                    item.status === 'CANCELLED' ? 'bg-red-500' :
+                        'bg-gray-500'
+    }))
+}
+
+export async function getPatientGrowthData(clinicId: string) {
+    const today = new Date()
+    const months = []
+
+    // Last 6 months
+    for (let i = 5; i >= 0; i--) {
+        const d = new Date(today.getFullYear(), today.getMonth() - i, 1)
+        months.push({
+            label: d.toLocaleString('default', { month: 'short' }),
+            start: startOfMonth(d),
+            end: endOfMonth(d)
+        })
+    }
+
+    const data = await Promise.all(months.map(async (m) => {
+        const count = await prisma.patient.count({
+            where: {
+                clinicId,
+                createdAt: {
+                    gte: m.start,
+                    lte: m.end
+                }
+            }
+        })
+        return {
+            name: m.label,
+            value: count
+        }
+    }))
+
+    return data
 }

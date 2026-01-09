@@ -50,7 +50,7 @@ export default async function DashboardPage() {
         <div className="flex flex-col">
             <Header
                 title="Dashboard"
-                description="Welcome back, Dr. Smith"
+                description={`Welcome back, ${user.firstName} ${user.lastName}`}
             />
 
             <div className="flex-1 space-y-6 p-6">

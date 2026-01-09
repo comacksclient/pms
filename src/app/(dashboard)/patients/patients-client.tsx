@@ -8,6 +8,8 @@ import { QuickAddPatientSheet } from "@/components/patients/quick-add-sheet"
 import { createPatient } from "@/lib/actions/patients"
 import type { PatientFormValues } from "@/lib/validations/patient"
 import { Button } from "@/components/ui/button"
+import { ImportPatientsDialog } from "@/components/patients/import-patients-dialog"
+import { ExportPatientsDialog } from "@/components/patients/export-patients-dialog"
 
 interface PatientsClientProps {
     initialPatients: any[] // Using any for brevity in migration, ideally Typed
@@ -45,20 +47,6 @@ export function PatientsClient({ initialPatients, clinicId }: PatientsClientProp
         // Implement deletePatient action integration
     }
 
-    const handleExport = () => {
-        const csvContent = "data:text/csv;charset=utf-8," +
-            "ID,First Name,Last Name,Phone,Email,DOB,Last Visit\n" +
-            patients.map(p => `${p.id},${p.firstName},${p.lastName},${p.phone},${p.email || ""},${new Date(p.dateOfBirth).toISOString().split('T')[0]},${p.lastVisitDate ? new Date(p.lastVisitDate).toISOString().split('T')[0] : ""}`).join("\n")
-
-        const encodedUri = encodeURI(csvContent)
-        const link = document.createElement("a")
-        link.setAttribute("href", encodedUri)
-        link.setAttribute("download", "patients_export.csv")
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-    }
-
     return (
         <div className="flex flex-col h-full">
             <Header
@@ -69,9 +57,10 @@ export function PatientsClient({ initialPatients, clinicId }: PatientsClientProp
                     onClick: () => setIsAddSheetOpen(true),
                 }}
             >
-                <Button variant="outline" className="ml-2" onClick={handleExport}>
-                    Export CSV
-                </Button>
+                <div className="flex items-center gap-2">
+                    <ImportPatientsDialog clinicId={clinicId} />
+                    <ExportPatientsDialog clinicId={clinicId} />
+                </div>
             </Header>
 
             <div className="flex-1 p-6">

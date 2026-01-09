@@ -2,6 +2,7 @@
 
 import prisma from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
+import { getCurrentUser } from "@/lib/auth"
 import type { PatientFormValues } from "@/lib/validations/patient"
 
 // Serialization Helpers
@@ -124,4 +125,91 @@ export async function updateLastVisitDate(patientId: string) {
         where: { id: patientId },
         data: { lastVisitDate: new Date() },
     })
+}
+
+/**
+ * Import patients from CSV data
+ * Handles bulk creation and basic validation
+ */
+export async function importPatients(clinicId: string, patients: any[]) {
+    const user = await getCurrentUser()
+    if (!user) {
+        throw new Error("Unauthorized")
+    }
+
+    try {
+        // Validate and map data
+        const validPatients = patients.map(p => {
+            if (!p.firstName || !p.lastName || !p.phone) {
+                return null
+            }
+
+            let dob = new Date()
+            if (p.dateOfBirth) {
+                dob = new Date(p.dateOfBirth)
+                if (isNaN(dob.getTime())) dob = new Date()
+            }
+
+            return {
+                firstName: String(p.firstName),
+                lastName: String(p.lastName),
+                phone: String(p.phone),
+                email: p.email ? String(p.email) : null,
+                dateOfBirth: dob,
+                gender: p.gender ? String(p.gender) : null,
+                address: p.address ? String(p.address) : null,
+                clinicId: clinicId,
+            }
+        }).filter(Boolean) as any[]
+
+        if (validPatients.length === 0) {
+            return { success: false, count: 0, error: "No valid records found" }
+        }
+
+        const result = await prisma.patient.createMany({
+            data: validPatients,
+            skipDuplicates: true
+        })
+
+        revalidatePath("/patients")
+        revalidatePath("/")
+
+        return { success: true, count: result.count }
+    } catch (error) {
+        console.error("Import failed:", error)
+        return { success: false, count: 0, error: "Database error during import" }
+    }
+}
+
+export async function exportPatients(clinicId: string, startDate?: Date, endDate?: Date) {
+    const where: any = { clinicId }
+
+    if (startDate && endDate) {
+        // Adjust endDate to end of day
+        const end = new Date(endDate)
+        end.setHours(23, 59, 59, 999)
+
+        where.createdAt = {
+            gte: startDate,
+            lte: end
+        }
+    }
+
+    const patients = await prisma.patient.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+            email: true,
+            dateOfBirth: true,
+            gender: true,
+            lastVisitDate: true,
+            createdAt: true
+        }
+    })
+
+    return patients
 }

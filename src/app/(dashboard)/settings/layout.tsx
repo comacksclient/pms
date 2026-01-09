@@ -22,16 +22,6 @@ const settingsNav = [
         href: "/settings/staff",
         icon: Users,
     },
-    {
-        title: "Clinic Info",
-        href: "/settings/clinic",
-        icon: Building2,
-    },
-    {
-        title: "Notifications",
-        href: "/settings/notifications",
-        icon: Bell,
-    },
 ]
 
 export default function SettingsLayout({

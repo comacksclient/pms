@@ -168,6 +168,7 @@ export function ScheduleClient({ clinicId }: { clinicId: string }) {
                         <DialogTitle>New Appointment</DialogTitle>
                     </DialogHeader>
                     <AppointmentForm
+                        clinicId={clinicId}
                         patients={patients}
                         onSubmit={handleCreateAppointment}
                         onCancel={() => setIsNewAppointmentOpen(false)}

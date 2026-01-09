@@ -15,8 +15,17 @@ export async function getAppointments(
 ) {
     const { date, doctorId, status } = options || {}
 
-    const startOfDay = date ? new Date(date.setHours(0, 0, 0, 0)) : undefined
-    const endOfDay = date ? new Date(date.setHours(23, 59, 59, 999)) : undefined
+    let startOfDay: Date | undefined
+    let endOfDay: Date | undefined
+
+    if (date) {
+        const queryDate = new Date(date)
+        startOfDay = new Date(queryDate)
+        startOfDay.setHours(0, 0, 0, 0)
+
+        endOfDay = new Date(queryDate)
+        endOfDay.setHours(23, 59, 59, 999)
+    }
 
     const appointments = await prisma.appointment.findMany({
         where: {

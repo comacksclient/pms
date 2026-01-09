@@ -1,9 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { appointmentFormSchema, type AppointmentFormValues } from "@/lib/validations/appointment"
+import { getPatients } from "@/lib/actions/patients"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -22,7 +23,7 @@ interface Patient {
 }
 
 interface AppointmentFormProps {
-    // doctors: Doctor[] // Removed
+    clinicId: string
     patients: Patient[]
     defaultValues?: Partial<AppointmentFormValues>
     onSubmit: (data: AppointmentFormValues) => Promise<void>
@@ -31,7 +32,7 @@ interface AppointmentFormProps {
 }
 
 export function AppointmentForm({
-    // doctors,
+    clinicId,
     patients,
     defaultValues,
     onSubmit,
@@ -51,11 +52,37 @@ export function AppointmentForm({
     })
 
     const [searchTerm, setSearchTerm] = useState("")
+    const [patientList, setPatientList] = useState(patients)
+    const [isSearching, setIsSearching] = useState(false)
 
-    const filteredPatients = patients.filter(p =>
-        p.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.lastName.toLowerCase().includes(searchTerm.toLowerCase())
-    )
+    // Update patientList when initial patients prop changes (e.g. reload)
+    useEffect(() => {
+        if (!searchTerm) {
+            setPatientList(patients)
+        }
+    }, [patients]) // Removed searchTerm dependency to avoid overwrite during typing
+
+    // Debounced search
+    useEffect(() => {
+        const delayDebounceFn = setTimeout(async () => {
+            if (!searchTerm) {
+                setPatientList(patients)
+                return
+            }
+
+            try {
+                setIsSearching(true)
+                const results = await getPatients(clinicId, searchTerm)
+                setPatientList(results.map((p: any) => ({ id: p.id, firstName: p.firstName, lastName: p.lastName })))
+            } catch (error) {
+                console.error("Search failed", error)
+            } finally {
+                setIsSearching(false)
+            }
+        }, 300)
+
+        return () => clearTimeout(delayDebounceFn)
+    }, [searchTerm, clinicId, patients])
 
     return (
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -73,14 +100,16 @@ export function AppointmentForm({
                         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         {...register("patientId")}
                     >
-                        <option value="">Select Patient ({filteredPatients.length})</option>
-                        {filteredPatients.map((patient) => (
+                        <option value="">
+                            {isSearching ? "Searching..." : `Select Patient (${patientList.length})`}
+                        </option>
+                        {patientList.map((patient) => (
                             <option key={patient.id} value={patient.id}>
                                 {patient.firstName} {patient.lastName}
                             </option>
                         ))}
                     </select>
-                    {patients.length === 0 && (
+                    {patientList.length === 0 && !isSearching && (
                         <p className="text-xs text-muted-foreground mt-1">No patients found. Access Patients page to add one.</p>
                     )}
                     {errors.patientId && (
