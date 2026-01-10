@@ -9,31 +9,41 @@ export async function getAppointments(
     clinicId: string,
     options?: {
         date?: Date
+        startDate?: Date
+        endDate?: Date
         doctorId?: string
         status?: string
     }
 ) {
-    const { date, doctorId, status } = options || {}
+    const { date, startDate, endDate, doctorId, status } = options || {}
 
-    let startOfDay: Date | undefined
-    let endOfDay: Date | undefined
+    let rangeStart: Date | undefined
+    let rangeEnd: Date | undefined
 
     if (date) {
+        // Single day filter
         const queryDate = new Date(date)
-        startOfDay = new Date(queryDate)
-        startOfDay.setHours(0, 0, 0, 0)
+        rangeStart = new Date(queryDate)
+        rangeStart.setHours(0, 0, 0, 0)
 
-        endOfDay = new Date(queryDate)
-        endOfDay.setHours(23, 59, 59, 999)
+        rangeEnd = new Date(queryDate)
+        rangeEnd.setHours(23, 59, 59, 999)
+    } else if (startDate && endDate) {
+        // Range filter
+        rangeStart = new Date(startDate)
+        rangeStart.setHours(0, 0, 0, 0)
+
+        rangeEnd = new Date(endDate)
+        rangeEnd.setHours(23, 59, 59, 999)
     }
 
     const appointments = await prisma.appointment.findMany({
         where: {
             clinicId,
-            ...(startOfDay && endOfDay && {
+            ...(rangeStart && rangeEnd && {
                 scheduledAt: {
-                    gte: startOfDay,
-                    lte: endOfDay,
+                    gte: rangeStart,
+                    lte: rangeEnd,
                 },
             }),
             ...(doctorId && { doctorId }),
@@ -95,13 +105,14 @@ export async function updateAppointmentStatus(
 }
 
 export async function getUpcomingAppointments(clinicId: string, limit = 5) {
-    const now = new Date()
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
 
     const appointments = await prisma.appointment.findMany({
         where: {
             clinicId,
-            scheduledAt: { gte: now },
-            status: { in: ["SCHEDULED", "CONFIRMED"] },
+            scheduledAt: { gte: today },
+            status: { in: ["SCHEDULED", "CONFIRMED", "SEATED"] },
         },
         include: {
             patient: true,

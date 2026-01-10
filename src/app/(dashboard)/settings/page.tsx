@@ -22,6 +22,18 @@ export default function SettingsPage() {
                             <Input id="clinicName" defaultValue="Smile Dental Clinic" />
                         </div>
                         <div className="space-y-2">
+                            <Label htmlFor="email">Clinic Email</Label>
+                            <Input id="email" type="email" defaultValue="contact@smiledental.com" />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="phone">Clinic Phone</Label>
+                            <Input id="phone" defaultValue="+91 98765 43210" />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="address">Clinic Address</Label>
+                            <Input id="address" defaultValue="123 Medical Drive, New Delhi, India" />
+                        </div>
+                        <div className="space-y-2">
                             <Label htmlFor="timezone">Timezone</Label>
                             <select
                                 id="timezone"

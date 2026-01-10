@@ -15,12 +15,14 @@ interface QuickAddPatientSheetProps {
     open: boolean
     onOpenChange: (open: boolean) => void
     onSubmit: (data: PatientFormValues) => Promise<void>
+    defaultValues?: Partial<PatientFormValues>
 }
 
 export function QuickAddPatientSheet({
     open,
     onOpenChange,
     onSubmit,
+    defaultValues,
 }: QuickAddPatientSheetProps) {
     const [isLoading, setIsLoading] = useState(false)
 
@@ -30,7 +32,7 @@ export function QuickAddPatientSheet({
             await onSubmit(data)
             onOpenChange(false)
         } catch (error) {
-            console.error("Failed to create patient:", error)
+            console.error("Failed to create/update patient:", error)
         } finally {
             setIsLoading(false)
         }
@@ -40,13 +42,14 @@ export function QuickAddPatientSheet({
         <Sheet open={open} onOpenChange={onOpenChange}>
             <SheetContent className="sm:max-w-lg overflow-y-auto">
                 <SheetHeader>
-                    <SheetTitle>Add New Patient</SheetTitle>
+                    <SheetTitle>{defaultValues ? "Edit Patient" : "Add New Patient"}</SheetTitle>
                     <SheetDescription>
-                        Fill in the patient details below. Required fields are marked with *.
+                        {defaultValues ? "Update patient details below." : "Fill in the patient details below. Required fields are marked with *."}
                     </SheetDescription>
                 </SheetHeader>
                 <div className="mt-6">
                     <PatientForm
+                        defaultValues={defaultValues}
                         onSubmit={handleSubmit}
                         onCancel={() => onOpenChange(false)}
                         isLoading={isLoading}

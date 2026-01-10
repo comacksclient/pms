@@ -12,7 +12,7 @@ import { createInvoice } from "@/lib/actions/invoices"
 import { getPatients } from "@/lib/actions/patients"
 import { getTreatments } from "@/lib/actions/treatments"
 import { createInvoiceSchema, type CreateInvoiceValues } from "@/lib/validations/invoice"
-import { cn } from "@/lib/utils"
+
 
 interface CreateInvoiceDialogProps {
     open: boolean

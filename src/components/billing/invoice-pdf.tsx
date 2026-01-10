@@ -151,7 +151,18 @@ interface InvoicePDFProps {
     clinicAddress?: string
 }
 
-export function InvoicePDF({ invoice, clinicName = "Dental Clinic", clinicAddress = "123 Medical Drive" }: InvoicePDFProps) {
+// Helper for PDF currency to avoid font issues with ₹ symbol
+const formatCurrencyPDF = (amount: any) => {
+    const val = Number(amount) || 0
+    return `Rs. ${val.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
+}
+
+export function InvoicePDF({ invoice, clinicName = "Smile Dental Clinic", clinicAddress = "123 Medical Drive, New Delhi, India" }: InvoicePDFProps) {
+    // Ensure numbers for math
+    const totalAmount = Number(invoice.total) || 0
+    const paidAmount = Number(invoice.amountPaid) || 0
+    const balanceDue = totalAmount - paidAmount
+
     return (
         <Document>
             <Page size="A4" style={styles.page}>
@@ -160,14 +171,14 @@ export function InvoicePDF({ invoice, clinicName = "Dental Clinic", clinicAddres
                     <View>
                         <Text style={styles.logo}>{clinicName}</Text>
                         <Text style={styles.value}>{clinicAddress}</Text>
-                        <Text>Phone: +1 234 567 890</Text>
-                        <Text>Email: contact@dentalclinic.com</Text>
+                        <Text>Phone: +91 98765 43210</Text>
+                        <Text>Email: contact@smiledental.com</Text>
                     </View>
                     <View style={{ alignItems: "flex-end" }}>
                         <Text style={styles.title}>INVOICE</Text>
                         <Text style={styles.value}>#{invoice.invoiceNumber || invoice.id.slice(0, 8)}</Text>
                         <View style={styles.status}>
-                            <Text>{invoice.status.toUpperCase()}</Text>
+                            <Text>{(invoice.status || 'DRAFT').toUpperCase()}</Text>
                         </View>
                     </View>
                 </View>
@@ -177,7 +188,7 @@ export function InvoicePDF({ invoice, clinicName = "Dental Clinic", clinicAddres
                     <View style={styles.col}>
                         <Text style={styles.label}>BILL TO</Text>
                         <Text style={styles.value}>{invoice.patient.firstName} {invoice.patient.lastName}</Text>
-                        <Text>{invoice.patient.address || "No address provided"}</Text>
+                        <Text>{invoice.patient.address || ""}</Text>
                         <Text>{invoice.patient.email}</Text>
                         <Text>{invoice.patient.phone}</Text>
                     </View>
@@ -201,8 +212,8 @@ export function InvoicePDF({ invoice, clinicName = "Dental Clinic", clinicAddres
                         <View key={i} style={styles.tableRow}>
                             <Text style={styles.descriptionFn}>{item.description}</Text>
                             <Text style={styles.qty}>{item.quantity}</Text>
-                            <Text style={styles.price}>{formatCurrency(item.unitPrice)}</Text>
-                            <Text style={styles.total}>{formatCurrency(item.total)}</Text>
+                            <Text style={styles.price}>{formatCurrencyPDF(item.unitPrice)}</Text>
+                            <Text style={styles.total}>{formatCurrencyPDF(item.total)}</Text>
                         </View>
                     ))}
                 </View>
@@ -211,21 +222,21 @@ export function InvoicePDF({ invoice, clinicName = "Dental Clinic", clinicAddres
                 <View style={styles.summary}>
                     <View style={styles.summaryRow}>
                         <Text>Subtotal</Text>
-                        <Text style={styles.value}>{formatCurrency(invoice.totalAmount)}</Text>
+                        <Text style={styles.value}>{formatCurrencyPDF(totalAmount)}</Text>
                     </View>
                     {/* Discount could go here */}
                     <View style={styles.totalRow}>
                         <Text style={styles.totalLabel}>TOTAL</Text>
-                        <Text style={styles.totalValue}>{formatCurrency(invoice.totalAmount)}</Text>
+                        <Text style={styles.totalValue}>{formatCurrencyPDF(totalAmount)}</Text>
                     </View>
                     <View style={styles.summaryRow}>
                         <Text>Amount Paid</Text>
-                        <Text style={styles.value}>{formatCurrency(invoice.paidAmount)}</Text>
+                        <Text style={styles.value}>{formatCurrencyPDF(paidAmount)}</Text>
                     </View>
                     <View style={[styles.summaryRow, { marginTop: 5 }]}>
-                        <Text style={{ color: invoice.totalAmount - invoice.paidAmount > 0 ? '#ef4444' : '#22c55e' }}>Balance Due</Text>
-                        <Text style={[styles.value, { color: invoice.totalAmount - invoice.paidAmount > 0 ? '#ef4444' : '#22c55e' }]}>
-                            {formatCurrency(invoice.totalAmount - invoice.paidAmount)}
+                        <Text style={{ color: balanceDue > 0 ? '#ef4444' : '#22c55e' }}>Balance Due</Text>
+                        <Text style={[styles.value, { color: balanceDue > 0 ? '#ef4444' : '#22c55e' }]}>
+                            {formatCurrencyPDF(balanceDue)}
                         </Text>
                     </View>
                 </View>

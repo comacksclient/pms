@@ -92,7 +92,7 @@ export function TreatmentsClient({ initialTreatments, clinicId }: TreatmentsClie
         setIsLoading(true)
 
         try {
-            const data = {
+            const data: any = {
                 code: formData.code || undefined,
                 name: formData.name,
                 description: formData.description || undefined,

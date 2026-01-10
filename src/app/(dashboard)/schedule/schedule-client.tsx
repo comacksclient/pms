@@ -72,17 +72,22 @@ export function ScheduleClient({ clinicId }: { clinicId: string }) {
         loadData()
     }, [])
 
-    // Fetch appointments when date changes
+    // Fetch appointments when date or view changes
     useEffect(() => {
         const fetchAppointments = async () => {
+            // Avoid infinite loop by not depending on 'appointments'
+            // but we rely on currentDate and view
+
             try {
-                // In a real app we'd get the actual clinicId. 
-                // For now we assume we might need to handle this differently if clinicId is required.
-                // Assuming getAppointments handles undefined clinicId gracefully or we hardcode for demo.
-                // NOTE: We need a clinicId. I'll mock it or use the first doctor's if available.
-                const res = await getAppointments(clinicId, { date: currentDate })
-                // Typings might mismatch due to Date vs string serialization in client components
-                // converting dates
+                let res;
+                if (view === "day") {
+                    res = await getAppointments(clinicId, { date: currentDate })
+                } else {
+                    const start = startOfWeek(currentDate, { weekStartsOn: 1 })
+                    const end = addDays(start, 6)
+                    res = await getAppointments(clinicId, { startDate: start, endDate: end })
+                }
+
                 const formatted = res.map((apt: any) => ({
                     ...apt,
                     scheduledAt: new Date(apt.scheduledAt)
@@ -93,10 +98,11 @@ export function ScheduleClient({ clinicId }: { clinicId: string }) {
             }
         }
         fetchAppointments()
-    }, [currentDate])
+    }, [currentDate, view, clinicId])
 
     const getAppointmentsForDate = (date: Date) => {
-        return appointments.filter(apt => isSameDay(apt.scheduledAt, date))
+        // We need to match day, month, year
+        return appointments.filter(apt => isSameDay(new Date(apt.scheduledAt), date))
     }
 
     const navigateDate = (direction: "prev" | "next") => {
