@@ -22,8 +22,9 @@ export const appointmentFormSchema = z.object({
         .max(480, "Duration cannot exceed 8 hours")
         .default(30),
 
-    type: z.enum(["CHECKUP", "TREATMENT", "EMERGENCY", "FOLLOW_UP", "CONSULTATION"])
-        .default("CHECKUP"),
+    type: z.string()
+        .min(1, "Treatment type is required")
+        .default("General Consultation"),
 
     chiefComplaint: z.string()
         .max(500, "Chief complaint is too long")

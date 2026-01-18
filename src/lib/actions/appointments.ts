@@ -17,7 +17,7 @@ export async function getAppointments(
 ) {
     const { doctorId, status, startDate, endDate } = options || {}
 
-    // Performance optimization: Default to ±30 days if no date range specified
+
     const defaultStart = startDate || new Date(new Date().setDate(new Date().getDate() - 30))
     const defaultEnd = endDate || new Date(new Date().setDate(new Date().getDate() + 30))
 
@@ -129,4 +129,65 @@ export async function getTodayAppointments(clinicId: string) {
     })
 
     return appointments
+}
+
+// Update appointment details (date, time, type, notes, duration)
+export async function updateAppointment(
+    id: string,
+    data: {
+        scheduledAt?: Date
+        type?: string
+        notes?: string
+        duration?: number
+        doctorId?: string
+    }
+) {
+    // Build update object only with defined values
+    const updateData: any = {}
+    if (data.scheduledAt !== undefined) updateData.scheduledAt = data.scheduledAt
+    if (data.type !== undefined) updateData.type = data.type
+    if (data.notes !== undefined) updateData.notes = data.notes
+    if (data.duration !== undefined) updateData.duration = data.duration
+    if (data.doctorId !== undefined) {
+        updateData.doctor = { connect: { id: data.doctorId } }
+    }
+
+    const appointment = await prisma.appointment.update({
+        where: { id },
+        data: updateData,
+        include: {
+            patient: true,
+            doctor: true,
+        },
+    })
+
+    revalidatePath("/schedule")
+    revalidatePath(`/patients/${appointment.patientId}`)
+    revalidatePath("/") // Dashboard
+    return appointment
+}
+
+// Get all appointments for a specific patient
+export async function getPatientAppointments(patientId: string) {
+    const appointments = await prisma.appointment.findMany({
+        where: { patientId },
+        include: {
+            doctor: true,
+        },
+        orderBy: { scheduledAt: "desc" },
+    })
+
+    return appointments
+}
+
+// Delete/Cancel appointment
+export async function deleteAppointment(id: string) {
+    const appointment = await prisma.appointment.delete({
+        where: { id },
+    })
+
+    revalidatePath("/schedule")
+    revalidatePath(`/patients/${appointment.patientId}`)
+    revalidatePath("/")
+    return appointment
 }

@@ -111,7 +111,7 @@ model Appointment {
   scheduledAt    DateTime
   duration       Int               @default(30) // minutes
   status         AppointmentStatus @default(SCHEDULED)
-  type           AppointmentType   @default(CHECKUP)
+  type           String            @default("General Consultation") // Changed from Enum to String for flexibility
   chiefComplaint String?
   notes          String?
   createdAt      DateTime          @default(now())

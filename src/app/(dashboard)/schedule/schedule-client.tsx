@@ -6,16 +6,40 @@ import { Header } from "@/components/layout/header"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { AppointmentForm } from "@/components/appointments/appointment-form"
-import { ChevronLeft, ChevronRight, Clock, Filter, Eye, EyeOff } from "lucide-react"
+import { ChevronLeft, ChevronRight, Clock, Filter, Eye, EyeOff, Edit, Check, X, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getDoctors } from "@/lib/actions/users"
 import { getPatients } from "@/lib/actions/patients"
-import { createAppointment } from "@/lib/actions/appointments"
+import { createAppointment, updateAppointment, updateAppointmentStatus } from "@/lib/actions/appointments"
 import { generateInvoiceFromAppointment } from "@/lib/actions/invoices"
 import { useRouter } from "next/navigation"
 import { CreditCard } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { getTreatments } from "@/lib/actions/treatments"
+
+// Common treatment types
+const TREATMENT_TYPES = [
+    "General Consultation",
+    "Dental Cleaning",
+    "Root Canal Treatment",
+    "Tooth Extraction",
+    "Dental Filling",
+    "Crown & Bridge",
+    "Teeth Whitening",
+    "Orthodontic Consultation",
+    "Dental Implant",
+    "Gum Treatment",
+    "Wisdom Tooth Removal",
+    "Dental X-Ray",
+    "Emergency Treatment",
+    "Follow-up Visit",
+    "Other"
+]
+
 
 interface Appointment {
     id: string
@@ -59,6 +83,18 @@ export function ScheduleClient({ clinicId, initialAppointments }: {
     const [isLoading, setIsLoading] = useState(false)
     const scrollContainerRef = useRef<HTMLDivElement>(null)
     const router = useRouter()
+
+    // Edit appointment state
+    const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null)
+    const [editForm, setEditForm] = useState({
+        date: "",
+        time: "",
+        type: "",
+        duration: 30,
+        notes: "",
+        status: "SCHEDULED" as "SCHEDULED" | "CONFIRMED" | "SEATED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "NO_SHOW"
+    })
+
 
     const timeSlots = showFullDay ? ALL_TIME_SLOTS : WORKING_HOURS_SLOTS
 
@@ -171,6 +207,65 @@ export function ScheduleClient({ clinicId, initialAppointments }: {
         }
     }
 
+    // Open edit dialog
+    const handleEditClick = (apt: Appointment, e: React.MouseEvent) => {
+        e.stopPropagation()
+        const aptDate = new Date(apt.scheduledAt)
+        setEditForm({
+            date: format(aptDate, "yyyy-MM-dd"),
+            time: format(aptDate, "HH:mm"),
+            type: apt.type,
+            duration: apt.duration,
+            notes: "",
+            status: apt.status as "SCHEDULED" | "CONFIRMED" | "SEATED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "NO_SHOW"
+        })
+        setEditingAppointment(apt)
+    }
+
+    // Save edited appointment
+    const handleSaveEdit = async () => {
+        if (!editingAppointment) return
+        setIsLoading(true)
+        try {
+            const [hours, mins] = editForm.time.split(":").map(Number)
+            const newDate = new Date(editForm.date)
+            newDate.setHours(hours, mins, 0, 0)
+
+            await updateAppointment(editingAppointment.id, {
+                scheduledAt: newDate,
+                type: editForm.type,
+                duration: editForm.duration
+            })
+
+            // Update status if it changed
+            if (editForm.status !== editingAppointment.status) {
+                await updateAppointmentStatus(editingAppointment.id, editForm.status)
+            }
+
+            setEditingAppointment(null)
+            router.refresh()
+        } catch (error) {
+            console.error("Failed to update appointment", error)
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
+    // Change appointment status
+    const handleStatusChange = async (appointmentId: string, newStatus: "SCHEDULED" | "CONFIRMED" | "SEATED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "NO_SHOW", e: React.MouseEvent) => {
+        e.stopPropagation()
+        setIsLoading(true)
+        try {
+            await updateAppointmentStatus(appointmentId, newStatus)
+            router.refresh()
+        } catch (error) {
+            console.error("Failed to update status", error)
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
+
     return (
         <div className="flex flex-col h-full bg-slate-50/50">
             <Header
@@ -195,6 +290,95 @@ export function ScheduleClient({ clinicId, initialAppointments }: {
                         onCancel={() => setIsNewAppointmentOpen(false)}
                         isLoading={isLoading}
                     />
+                </DialogContent>
+            </Dialog>
+
+            {/* Edit Appointment Dialog */}
+            <Dialog open={!!editingAppointment} onOpenChange={(open) => !open && setEditingAppointment(null)}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Edit Appointment</DialogTitle>
+                        <DialogDescription>
+                            {editingAppointment?.patient.firstName} {editingAppointment?.patient.lastName}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="edit-date">Date</Label>
+                                <Input
+                                    id="edit-date"
+                                    type="date"
+                                    value={editForm.date}
+                                    onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="edit-time">Time</Label>
+                                <Input
+                                    id="edit-time"
+                                    type="time"
+                                    value={editForm.time}
+                                    onChange={(e) => setEditForm({ ...editForm, time: e.target.value })}
+                                />
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="edit-type">Treatment Type</Label>
+                            <Select
+                                value={editForm.type}
+                                onValueChange={(value) => setEditForm({ ...editForm, type: value })}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select treatment" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {TREATMENT_TYPES.map((treatment) => (
+                                        <SelectItem key={treatment} value={treatment}>
+                                            {treatment}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="edit-duration">Duration (minutes)</Label>
+                            <Input
+                                id="edit-duration"
+                                type="number"
+                                value={editForm.duration}
+                                onChange={(e) => setEditForm({ ...editForm, duration: parseInt(e.target.value) || 30 })}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Status</Label>
+                            <Select
+                                value={editForm.status}
+                                onValueChange={(value: any) => setEditForm({ ...editForm, status: value })}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select status" />
+                                </SelectTrigger>
+                                <SelectContent position="popper" side="bottom">
+                                    <SelectItem value="SCHEDULED">🔵 Scheduled</SelectItem>
+                                    <SelectItem value="CONFIRMED">✅ Confirmed</SelectItem>
+                                    <SelectItem value="SEATED">🪑 Seated</SelectItem>
+                                    <SelectItem value="IN_PROGRESS">🏥 In Progress</SelectItem>
+                                    <SelectItem value="COMPLETED">✔️ Completed</SelectItem>
+                                    <SelectItem value="CANCELLED">❌ Cancelled</SelectItem>
+                                    <SelectItem value="NO_SHOW">⚠️ No Show</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setEditingAppointment(null)}>
+                            Cancel
+                        </Button>
+                        <Button onClick={handleSaveEdit} disabled={isLoading}>
+                            {isLoading ? "Saving..." : "Save Changes"}
+                        </Button>
+                    </DialogFooter>
                 </DialogContent>
             </Dialog>
 
@@ -316,23 +500,91 @@ export function ScheduleClient({ clinicId, initialAppointments }: {
                                                                     </div>
 
                                                                     <div className="flex flex-col items-end gap-2">
-                                                                        <Badge
-                                                                            variant="outline"
-                                                                            className="h-6 font-bold text-[10px] uppercase bg-white/80"
-                                                                        >
-                                                                            {apt.status}
-                                                                        </Badge>
-                                                                        {apt.status === "COMPLETED" && (
+                                                                        {/* Status with quick actions */}
+                                                                        <div className="flex items-center gap-1">
                                                                             <Button
                                                                                 size="sm"
-                                                                                variant="default"
-                                                                                className="h-8 px-3 text-xs font-bold gap-2 shadow-sm"
-                                                                                onClick={(e) => handleCreateInvoice(apt.id, e)}
+                                                                                variant="ghost"
+                                                                                className="h-6 w-6 p-0"
+                                                                                onClick={(e) => handleEditClick(apt, e)}
+                                                                                title="Edit Appointment"
                                                                             >
-                                                                                <CreditCard className="h-3.5 w-3.5" />
-                                                                                Bill Patient
+                                                                                <Edit className="h-3.5 w-3.5" />
                                                                             </Button>
-                                                                        )}
+                                                                            <Badge
+                                                                                variant="outline"
+                                                                                className="h-6 font-bold text-[10px] uppercase bg-white/80"
+                                                                            >
+                                                                                {apt.status}
+                                                                            </Badge>
+                                                                        </div>
+
+                                                                        {/* Status change buttons */}
+                                                                        <div className="flex gap-1">
+                                                                            {apt.status === "SCHEDULED" && (
+                                                                                <>
+                                                                                    <Button
+                                                                                        size="sm"
+                                                                                        variant="outline"
+                                                                                        className="h-7 px-2 text-xs gap-1 bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
+                                                                                        onClick={(e) => handleStatusChange(apt.id, "CONFIRMED", e)}
+                                                                                    >
+                                                                                        <Check className="h-3 w-3" />
+                                                                                        Confirm
+                                                                                    </Button>
+                                                                                    <Button
+                                                                                        size="sm"
+                                                                                        variant="outline"
+                                                                                        className="h-7 px-2 text-xs gap-1 bg-red-50 border-red-200 text-red-700 hover:bg-red-100"
+                                                                                        onClick={(e) => handleStatusChange(apt.id, "CANCELLED", e)}
+                                                                                    >
+                                                                                        <X className="h-3 w-3" />
+                                                                                    </Button>
+                                                                                </>
+                                                                            )}
+                                                                            {apt.status === "CONFIRMED" && (
+                                                                                <Button
+                                                                                    size="sm"
+                                                                                    variant="outline"
+                                                                                    className="h-7 px-2 text-xs gap-1 bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100"
+                                                                                    onClick={(e) => handleStatusChange(apt.id, "SEATED", e)}
+                                                                                >
+                                                                                    Patient Seated
+                                                                                </Button>
+                                                                            )}
+                                                                            {apt.status === "SEATED" && (
+                                                                                <Button
+                                                                                    size="sm"
+                                                                                    variant="outline"
+                                                                                    className="h-7 px-2 text-xs gap-1 bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100"
+                                                                                    onClick={(e) => handleStatusChange(apt.id, "IN_PROGRESS", e)}
+                                                                                >
+                                                                                    Start Treatment
+                                                                                </Button>
+                                                                            )}
+                                                                            {apt.status === "IN_PROGRESS" && (
+                                                                                <Button
+                                                                                    size="sm"
+                                                                                    variant="default"
+                                                                                    className="h-7 px-2 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700"
+                                                                                    onClick={(e) => handleStatusChange(apt.id, "COMPLETED", e)}
+                                                                                >
+                                                                                    <Check className="h-3 w-3" />
+                                                                                    Complete
+                                                                                </Button>
+                                                                            )}
+                                                                            {apt.status === "COMPLETED" && (
+                                                                                <Button
+                                                                                    size="sm"
+                                                                                    variant="default"
+                                                                                    className="h-7 px-2 text-xs font-bold gap-1 shadow-sm"
+                                                                                    onClick={(e) => handleCreateInvoice(apt.id, e)}
+                                                                                >
+                                                                                    <CreditCard className="h-3 w-3" />
+                                                                                    Bill
+                                                                                </Button>
+                                                                            )}
+                                                                        </div>
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -417,10 +669,11 @@ export function ScheduleClient({ clinicId, initialAppointments }: {
                                                                     <div
                                                                         key={apt.id}
                                                                         className={cn(
-                                                                            "rounded-lg border-l-2 p-2 mb-1 cursor-pointer shadow-sm overflow-hidden",
+                                                                            "rounded-lg border-l-2 p-2 mb-1 cursor-pointer shadow-sm overflow-hidden hover:shadow-md transition-shadow",
                                                                             getStatusColor(apt.status)
                                                                         )}
-                                                                        title={`${apt.patient.firstName} ${apt.patient.lastName} - ${apt.type} with Dr. ${apt.doctor.lastName}`}
+                                                                        title={`${apt.patient.firstName} ${apt.patient.lastName} - ${apt.type} with Dr. ${apt.doctor.lastName} (Click to edit)`}
+                                                                        onClick={(e) => handleEditClick(apt, e)}
                                                                     >
                                                                         <p className="font-bold text-[11px] leading-tight truncate text-slate-900">
                                                                             {apt.patient.firstName}
@@ -429,6 +682,9 @@ export function ScheduleClient({ clinicId, initialAppointments }: {
                                                                             <span className="text-[9px] font-bold truncate">
                                                                                 {format(new Date(apt.scheduledAt), "h:mm a")}
                                                                             </span>
+                                                                            <Badge variant="outline" className="text-[8px] h-4 px-1">
+                                                                                {apt.status}
+                                                                            </Badge>
                                                                         </div>
                                                                     </div>
                                                                 ))}
