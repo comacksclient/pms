@@ -7,7 +7,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Plus, Trash2, Loader2 } from "lucide-react"
+import { ChevronsUpDown, Check, Plus, Trash2, Loader2 } from "lucide-react"
+import { cn } from "@/lib/utils"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import {
+    Command,
+    CommandEmpty,
+    CommandGroup,
+    CommandInput,
+    CommandItem,
+    CommandList,
+} from "@/components/ui/command"
+
 import { createInvoice } from "@/lib/actions/invoices"
 import { getPatients } from "@/lib/actions/patients"
 import { getTreatments } from "@/lib/actions/treatments"
@@ -22,6 +33,7 @@ interface CreateInvoiceDialogProps {
     onSuccess: () => void
 }
 
+
 export function CreateInvoiceDialog({
     open,
     onOpenChange,
@@ -33,6 +45,7 @@ export function CreateInvoiceDialog({
     const [treatments, setTreatments] = useState<{ id: string; name: string; standardCost: number }[]>([])
     const [isLoadingPatients, setIsLoadingPatients] = useState(false)
     const [isSubmitting, setIsSubmitting] = useState(false)
+    const [patientOpen, setPatientOpen] = useState(false) // State for combobox
 
     // @ts-ignore - Resolver types mismatch due to strict Zod inference but runtime is fine. 
     // We are manually casting or ignoring to proceed fast as schema is correct.
@@ -167,7 +180,7 @@ export function CreateInvoiceDialog({
 
                 <form onSubmit={handleSubmit(onSubmit as any)} className="space-y-6">
                     <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
+                        <div className="flex flex-col space-y-2">
                             <Label>Patient</Label>
                             {defaultPatientId ? (
                                 <Input
@@ -175,17 +188,52 @@ export function CreateInvoiceDialog({
                                     disabled
                                 />
                             ) : (
-                                <select
-                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                                    {...register("patientId")}
-                                >
-                                    <option value="">Select Patient</option>
-                                    {patients.map((patient) => (
-                                        <option key={patient.id} value={patient.id}>
-                                            {patient.firstName} {patient.lastName}
-                                        </option>
-                                    ))}
-                                </select>
+                                <Popover open={patientOpen} onOpenChange={setPatientOpen}>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant="outline"
+                                            role="combobox"
+                                            aria-expanded={patientOpen}
+                                            className={cn(
+                                                "w-full justify-between",
+                                                !watch("patientId") && "text-muted-foreground"
+                                            )}
+                                        >
+                                            {watch("patientId")
+                                                ? patients.find((patient) => patient.id === watch("patientId"))?.firstName + " " + patients.find((patient) => patient.id === watch("patientId"))?.lastName
+                                                : "Select patient..."}
+                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-[300px] p-0" align="start">
+                                        <Command>
+                                            <CommandInput placeholder="Search patient..." />
+                                            <CommandList>
+                                                <CommandEmpty>No patient found.</CommandEmpty>
+                                                <CommandGroup>
+                                                    {patients.map((patient) => (
+                                                        <CommandItem
+                                                            key={patient.id}
+                                                            value={patient.firstName + " " + patient.lastName}
+                                                            onSelect={() => {
+                                                                setValue("patientId", patient.id)
+                                                                setPatientOpen(false)
+                                                            }}
+                                                        >
+                                                            <Check
+                                                                className={cn(
+                                                                    "mr-2 h-4 w-4",
+                                                                    watch("patientId") === patient.id ? "opacity-100" : "opacity-0"
+                                                                )}
+                                                            />
+                                                            {patient.firstName} {patient.lastName}
+                                                        </CommandItem>
+                                                    ))}
+                                                </CommandGroup>
+                                            </CommandList>
+                                        </Command>
+                                    </PopoverContent>
+                                </Popover>
                             )}
                             {errors.patientId && (
                                 <p className="text-sm text-destructive">{errors.patientId.message}</p>
@@ -194,6 +242,8 @@ export function CreateInvoiceDialog({
 
                         <div className="space-y-2">
                             <Label>Due Date</Label>
+                            {/* ... Rest of the form remains same */}
+
                             <Input
                                 type="date"
                                 {...register("dueDate", { valueAsDate: true })}

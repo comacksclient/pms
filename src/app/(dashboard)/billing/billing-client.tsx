@@ -29,10 +29,11 @@ import {
 import { formatCurrency } from "@/lib/utils"
 import { PAYMENT_METHODS } from "@/lib/validations/invoice"
 import { PDFDownloadLink } from "@react-pdf/renderer"
-import { InvoicePDF } from "@/components/billing/invoice-pdf"
+
 import { recordPayment } from "@/lib/actions/invoices"
 import { CreateInvoiceDialog } from "@/components/billing/create-invoice-dialog"
 import { useSearchParams, useRouter } from "next/navigation"
+import { InvoicePDF } from "@/components/billing/invoice-pdf"
 
 interface BillingClientProps {
     initialInvoices: any[]
@@ -286,6 +287,10 @@ export function BillingClient({ initialInvoices, clinicId }: BillingClientProps)
                                                                         phone: invoice.patient.phone
                                                                     } : { firstName: "", lastName: "", email: "", phone: "" }
                                                                 }}
+                                                                clinicName={invoice.clinic?.name}
+                                                                clinicAddress={invoice.clinic?.address}
+                                                                clinicPhone={invoice.clinic?.phone}
+                                                                clinicEmail={invoice.clinic?.email}
                                                             />
                                                         }
                                                         fileName={`${invoice.invoiceNumber || invoice.id}.pdf`}

@@ -57,6 +57,7 @@ export async function getInvoices(
         },
         include: {
             patient: true,
+            clinic: true,
             items: true,
             payments: true,
         },
@@ -73,6 +74,7 @@ export async function getInvoiceById(id: string) {
         include: {
             patient: true,
             appointment: true,
+            clinic: true,
             items: {
                 include: {
                     clinicalRecord: {
@@ -158,7 +160,7 @@ export async function recordPayment(data: PaymentFormValues) {
     if (invoice) {
         const totalPaid = invoice.payments.reduce(
             (sum: number, p: { amount: unknown }) => sum + Number(p.amount),
-            Number(data.amount)
+            0
         )
 
         const status = totalPaid >= Number(invoice.total) ? "PAID" : "PARTIAL"
@@ -220,4 +222,155 @@ export async function generateInvoiceFromAppointment(
     })
 
     return invoice
+}
+
+// Update invoice details
+export async function updateInvoice(
+    invoiceId: string,
+    data: {
+        notes?: string
+        dueDate?: Date
+        discount?: number
+        discountType?: string
+        tax?: number
+        status?: "DRAFT" | "PENDING" | "PARTIAL" | "PAID" | "CANCELLED" | "REFUNDED"
+    }
+) {
+    // Get current invoice to recalculate if discount/tax changed
+    const currentInvoice = await prisma.invoice.findUnique({
+        where: { id: invoiceId },
+        include: { items: true }
+    })
+
+    if (!currentInvoice) {
+        throw new Error("Invoice not found")
+    }
+
+    let updateData: any = {}
+
+    // Update simple fields
+    if (data.notes !== undefined) updateData.notes = data.notes
+    if (data.dueDate !== undefined) updateData.dueDate = data.dueDate
+    if (data.status !== undefined) updateData.status = data.status
+
+    // If discount or tax changed, recalculate total
+    if (data.discount !== undefined || data.tax !== undefined || data.discountType !== undefined) {
+        const subtotal = Number(currentInvoice.subtotal)
+
+        let discount = data.discount ?? Number(currentInvoice.discount)
+        const discountType = data.discountType ?? currentInvoice.discountType
+
+        if (discountType === "percentage") {
+            discount = (subtotal * discount) / 100
+        }
+
+        const tax = data.tax ?? Number(currentInvoice.tax)
+        const total = subtotal - discount + tax
+
+        updateData.discount = discount
+        updateData.discountType = discountType
+        updateData.tax = tax
+        updateData.total = total
+    }
+
+    const invoice = await prisma.invoice.update({
+        where: { id: invoiceId },
+        data: updateData,
+        include: {
+            patient: true,
+            clinic: true,
+            items: true,
+            payments: true,
+        },
+    })
+
+    revalidatePath("/billing")
+    revalidatePath(`/billing/${invoiceId}`)
+    revalidatePath("/")
+    return serializeInvoice(invoice)
+}
+
+// Update invoice items
+export async function updateInvoiceItems(
+    invoiceId: string,
+    items: Array<{
+        id?: string
+        description: string
+        quantity: number
+        unitPrice: number
+        clinicalRecordId?: string
+    }>
+) {
+    // Delete existing items
+    await prisma.invoiceItem.deleteMany({
+        where: { invoiceId }
+    })
+
+    // Create new items
+    const subtotal = items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0)
+
+    const currentInvoice = await prisma.invoice.findUnique({
+        where: { id: invoiceId }
+    })
+
+    if (!currentInvoice) {
+        throw new Error("Invoice not found")
+    }
+
+    let discount = Number(currentInvoice.discount)
+    if (currentInvoice.discountType === "percentage") {
+        discount = (subtotal * discount) / 100
+    }
+
+    const tax = Number(currentInvoice.tax)
+    const total = subtotal - discount + tax
+
+    const invoice = await prisma.invoice.update({
+        where: { id: invoiceId },
+        data: {
+            subtotal,
+            total,
+            items: {
+                create: items.map(item => ({
+                    description: item.description,
+                    quantity: item.quantity,
+                    unitPrice: item.unitPrice,
+                    total: item.unitPrice * item.quantity,
+                    clinicalRecordId: item.clinicalRecordId,
+                }))
+            }
+        },
+        include: {
+            patient: true,
+            clinic: true,
+            items: true,
+            payments: true,
+        },
+    })
+
+    revalidatePath("/billing")
+    revalidatePath(`/billing/${invoiceId}`)
+    revalidatePath("/")
+    return serializeInvoice(invoice)
+}
+
+// Delete invoice
+export async function deleteInvoice(invoiceId: string) {
+    // First delete related items and payments
+    await prisma.invoiceItem.deleteMany({
+        where: { invoiceId }
+    })
+
+    await prisma.payment.deleteMany({
+        where: { invoiceId }
+    })
+
+    // Then delete the invoice
+    const invoice = await prisma.invoice.delete({
+        where: { id: invoiceId }
+    })
+
+    revalidatePath("/billing")
+    revalidatePath("/")
+    return { success: true, id: invoice.id }
 }
