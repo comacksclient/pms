@@ -1,6 +1,6 @@
 
 import prisma from "@/lib/prisma"
-import { startOfMonth, endOfMonth, subMonths, format } from "date-fns"
+import { startOfMonth, endOfMonth, subMonths, format, startOfYear, endOfYear, subYears } from "date-fns"
 
 export async function getDashboardStats(clinicId: string) {
     const startOfCurrentMonth = startOfMonth(new Date())
@@ -8,85 +8,80 @@ export async function getDashboardStats(clinicId: string) {
     const startOfLastMonth = startOfMonth(subMonths(new Date(), 1))
     const endOfLastMonth = endOfMonth(subMonths(new Date(), 1))
 
-    const totalPatients = await prisma.patient.count({
-        where: { clinicId },
-    })
+    // Run independent queries in parallel
+    const [
+        totalPatients,
+        appointmentsToday,
+        appointmentsCompletedToday,
+        totalRevenueResult,
+        currentMonthRevenueResult,
+        lastMonthRevenueResult,
+        pendingInvoices
+    ] = await Promise.all([
+        // 1. Total Patients
+        prisma.patient.count({ where: { clinicId } }),
 
-    // 2. Today's Appointments
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
-
-    const appointmentsToday = await prisma.appointment.count({
-        where: {
-            clinicId,
-            scheduledAt: {
-                gte: today,
-                lt: tomorrow,
+        // 2. Today's Appointments (Total)
+        prisma.appointment.count({
+            where: {
+                clinicId,
+                scheduledAt: {
+                    gte: new Date(new Date().setHours(0, 0, 0, 0)),
+                    lt: new Date(new Date().setHours(24, 0, 0, 0)),
+                },
             },
-        },
-    })
+        }),
 
-    const appointmentsCompletedToday = await prisma.appointment.count({
-        where: {
-            clinicId,
-            status: "COMPLETED",
-            scheduledAt: {
-                gte: today,
-                lt: tomorrow,
+        // 3. Today's Appointments (Completed)
+        prisma.appointment.count({
+            where: {
+                clinicId,
+                status: "COMPLETED",
+                scheduledAt: {
+                    gte: new Date(new Date().setHours(0, 0, 0, 0)),
+                    lt: new Date(new Date().setHours(24, 0, 0, 0)),
+                },
             },
-        },
-    })
+        }),
 
+        // 4. Total Revenue (All Time)
+        prisma.payment.aggregate({
+            where: { invoice: { clinicId } },
+            _sum: { amount: true },
+        }),
 
-
-    // 3. Total Revenue (All Time)
-    const totalRevenue = await prisma.payment.aggregate({
-        where: {
-            invoice: { clinicId },
-        },
-        _sum: { amount: true },
-    })
-
-    const currentMonthRevenue = await prisma.payment.aggregate({
-        where: {
-            invoice: { clinicId },
-            paidAt: {
-                gte: startOfCurrentMonth,
-                lte: endOfCurrentMonth,
+        // 5. Current Month Revenue
+        prisma.payment.aggregate({
+            where: {
+                invoice: { clinicId },
+                paidAt: { gte: startOfCurrentMonth, lte: endOfCurrentMonth },
             },
-        },
-        _sum: { amount: true },
-    })
+            _sum: { amount: true },
+        }),
 
-    const lastMonthRevenue = await prisma.payment.aggregate({
-        where: {
-            invoice: { clinicId },
-            paidAt: {
-                gte: startOfLastMonth,
-                lte: endOfLastMonth,
+        // 6. Last Month Revenue
+        prisma.payment.aggregate({
+            where: {
+                invoice: { clinicId },
+                paidAt: { gte: startOfLastMonth, lte: endOfLastMonth },
             },
-        },
-        _sum: { amount: true },
-    })
+            _sum: { amount: true },
+        }),
 
-    // Decimal handling
-    const totalRevenueValue = totalRevenue
+        // 7. Pending Invoices
+        prisma.invoice.count({
+            where: {
+                clinicId,
+                status: { in: ["PENDING", "PARTIAL"] }
+            }
+        })
+    ])
 
-        ._sum.amount ? Number(totalRevenue._sum.amount) : 0
-    const revenueValue = currentMonthRevenue._sum.amount ? Number(currentMonthRevenue._sum.amount) : 0
-    const lastRevenueValue = lastMonthRevenue._sum.amount ? Number(lastMonthRevenue._sum.amount) : 0
+    // Process results
+    const totalRevenueValue = totalRevenueResult._sum.amount ? Number(totalRevenueResult._sum.amount) : 0
+    const revenueValue = currentMonthRevenueResult._sum.amount ? Number(currentMonthRevenueResult._sum.amount) : 0
+    const lastRevenueValue = lastMonthRevenueResult._sum.amount ? Number(lastMonthRevenueResult._sum.amount) : 0
     const revenueChange = lastRevenueValue === 0 ? 100 : ((revenueValue - lastRevenueValue) / lastRevenueValue) * 100
-
-    // 4. Invoices Pending count
-    const pendingInvoices = await prisma.invoice.count({
-        where: {
-            clinicId,
-            status: { in: ["PENDING", "PARTIAL"] }
-        }
-    })
-
 
     return [
         {
@@ -128,30 +123,14 @@ export async function getUpcomingAppointments(clinicId: string) {
     const appointments = await prisma.appointment.findMany({
         where: {
             clinicId,
-            scheduledAt: {
-                gte: today,
-            },
-            status: {
-                in: ["SCHEDULED", "CONFIRMED", "SEATED"]
-            }
+            scheduledAt: { gte: today },
+            status: { in: ["SCHEDULED", "CONFIRMED", "SEATED"] }
         },
         include: {
-            patient: {
-                select: {
-                    firstName: true,
-                    lastName: true,
-                }
-            },
-            doctor: {
-                select: {
-                    firstName: true,
-                    lastName: true,
-                }
-            }
+            patient: { select: { firstName: true, lastName: true } },
+            doctor: { select: { firstName: true, lastName: true } }
         },
-        orderBy: {
-            scheduledAt: "asc"
-        },
+        orderBy: { scheduledAt: "asc" },
         take: 5
     })
 
@@ -159,23 +138,12 @@ export async function getUpcomingAppointments(clinicId: string) {
 }
 
 export async function getRecentActivity(clinicId: string) {
-    // Recent appointments
     const recentAppointments = await prisma.appointment.findMany({
-        where: {
-            clinicId,
-            status: "COMPLETED",
-        },
+        where: { clinicId }, // Removed status: "COMPLETED" to show all activity
         include: {
-            patient: {
-                select: {
-                    firstName: true,
-                    lastName: true,
-                }
-            }
+            patient: { select: { firstName: true, lastName: true } }
         },
-        orderBy: {
-            updatedAt: "desc"
-        },
+        orderBy: { updatedAt: "desc" },
         take: 5
     })
 
@@ -183,7 +151,7 @@ export async function getRecentActivity(clinicId: string) {
         id: apt.id,
         patient: `${apt.patient.firstName} ${apt.patient.lastName}`,
         treatment: apt.type,
-        action: "completed",
+        action: apt.status.toLowerCase(), // Use actual status
         time: apt.updatedAt.toISOString()
     }))
 }
@@ -202,23 +170,29 @@ export async function getRevenueChartData(clinicId: string) {
         })
     }
 
-    const data = await Promise.all(months.map(async (m) => {
-        const result = await prisma.payment.aggregate({
-            where: {
-                invoice: { clinicId },
-                paidAt: {
-                    gte: m.start,
-                    lte: m.end
-                }
-            },
-            _sum: { amount: true }
-        })
+    // Optimization: Single Query
+    const startDate = months[0].start
+    const endDate = months[months.length - 1].end
 
-        return {
-            name: m.label,
-            value: result._sum.amount ? Number(result._sum.amount) : 0
-        }
-    }))
+    const payments = await prisma.payment.findMany({
+        where: {
+            invoice: { clinicId },
+            paidAt: { gte: startDate, lte: endDate }
+        },
+        select: { amount: true, paidAt: true }
+    })
+
+    const data = months.map(m => {
+        const total = payments
+            .filter(p => {
+                if (!p.paidAt) return false
+                const d = new Date(p.paidAt)
+                return d >= m.start && d <= m.end
+            })
+            .reduce((sum, p) => sum + Number(p.amount), 0)
+
+        return { name: m.label, value: total }
+    })
 
     return data
 }
@@ -244,23 +218,29 @@ export async function getRevenueChartDataWeekly(clinicId: string) {
         })
     }
 
-    const data = await Promise.all(weeks.map(async (w) => {
-        const result = await prisma.payment.aggregate({
-            where: {
-                invoice: { clinicId },
-                paidAt: {
-                    gte: w.start,
-                    lte: w.end
-                }
-            },
-            _sum: { amount: true }
-        })
+    // Optimization: Single Query
+    const startDate = weeks[0].start
+    const endDate = weeks[weeks.length - 1].end
 
-        return {
-            name: w.label,
-            value: result._sum.amount ? Number(result._sum.amount) : 0
-        }
-    }))
+    const payments = await prisma.payment.findMany({
+        where: {
+            invoice: { clinicId },
+            paidAt: { gte: startDate, lte: endDate }
+        },
+        select: { amount: true, paidAt: true }
+    })
+
+    const data = weeks.map(w => {
+        const total = payments
+            .filter(p => {
+                if (!p.paidAt) return false
+                const d = new Date(p.paidAt)
+                return d >= w.start && d <= w.end
+            })
+            .reduce((sum, p) => sum + Number(p.amount), 0)
+
+        return { name: w.label, value: total }
+    })
 
     return data
 }
@@ -297,21 +277,25 @@ export async function getPatientGrowthData(clinicId: string) {
         })
     }
 
-    const data = await Promise.all(months.map(async (m) => {
-        const count = await prisma.patient.count({
-            where: {
-                clinicId,
-                createdAt: {
-                    gte: m.start,
-                    lte: m.end
-                }
-            }
-        })
-        return {
-            name: m.label,
-            value: count
-        }
-    }))
+    // Optimization: Single Query
+    const startDate = months[0].start
+    const endDate = months[months.length - 1].end
+
+    const patients = await prisma.patient.findMany({
+        where: {
+            clinicId,
+            createdAt: { gte: startDate, lte: endDate }
+        },
+        select: { createdAt: true }
+    })
+
+    const data = months.map(m => {
+        const count = patients.filter(p => {
+            const d = new Date(p.createdAt)
+            return d >= m.start && d <= m.end
+        }).length
+        return { name: m.label, value: count }
+    })
 
     return data
 }
@@ -337,43 +321,36 @@ export async function getPatientGrowthDataWeekly(clinicId: string) {
         })
     }
 
-    const data = await Promise.all(weeks.map(async (w) => {
-        const count = await prisma.patient.count({
-            where: {
-                clinicId,
-                createdAt: {
-                    gte: w.start,
-                    lte: w.end
-                }
-            }
-        })
-        return {
-            name: w.label,
-            value: count
-        }
-    }))
+    // Optimization: Single Query
+    const startDate = weeks[0].start
+    const endDate = weeks[weeks.length - 1].end
+
+    const patients = await prisma.patient.findMany({
+        where: {
+            clinicId,
+            createdAt: { gte: startDate, lte: endDate }
+        },
+        select: { createdAt: true }
+    })
+
+    const data = weeks.map(w => {
+        const count = patients.filter(p => {
+            const d = new Date(p.createdAt)
+            return d >= w.start && d <= w.end
+        }).length
+        return { name: w.label, value: count }
+    })
 
     return data
 }
 
-// Top Services by Revenue
 export async function getTopServicesData(clinicId: string) {
     const topServices = await prisma.invoiceItem.groupBy({
         by: ['description'],
-        where: {
-            invoice: { clinicId }
-        },
-        _sum: {
-            total: true
-        },
-        _count: {
-            id: true
-        },
-        orderBy: {
-            _sum: {
-                total: 'desc'
-            }
-        },
+        where: { invoice: { clinicId } },
+        _sum: { total: true },
+        _count: { id: true },
+        orderBy: { _sum: { total: 'desc' } },
         take: 5
     })
 
@@ -384,46 +361,55 @@ export async function getTopServicesData(clinicId: string) {
     }))
 }
 
-// Monthly Revenue Comparison (This Year vs Last Year)
+// Optimized Monthly Revenue Comparison (Single Query)
 export async function getMonthlyComparisonData(clinicId: string) {
     const currentYear = new Date().getFullYear()
+    const lastYear = currentYear - 1
+
+    // Define date ranges
+    const startOfCurrentYear = startOfYear(new Date(currentYear, 0, 1))
+    const endOfCurrentYear = endOfYear(new Date(currentYear, 11, 31))
+    const startOfLastYear = startOfYear(new Date(lastYear, 0, 1))
+    const endOfLastYear = endOfYear(new Date(lastYear, 11, 31))
+
+    // Fetch ALL payments for both years in a single query
+    const payments = await prisma.payment.findMany({
+        where: {
+            invoice: { clinicId },
+            paidAt: {
+                gte: startOfLastYear, // Start from last year
+                lte: endOfCurrentYear // End at current year
+            }
+        },
+        select: {
+            amount: true,
+            paidAt: true
+        }
+    })
+
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-    const chartData = []
+    // Initialize aggregation map
+    const chartData = months.map(month => ({
+        month,
+        thisYear: 0,
+        lastYear: 0
+    }))
 
-    for (let i = 0; i < 12; i++) {
-        const thisYearStart = new Date(currentYear, i, 1)
-        const thisYearEnd = new Date(currentYear, i + 1, 1)
-        const lastYearStart = new Date(currentYear - 1, i, 1)
-        const lastYearEnd = new Date(currentYear - 1, i + 1, 1)
+    // Aggregate in memory
+    for (const payment of payments) {
+        if (!payment.paidAt) continue
 
-        const thisYearRevenue = await prisma.payment.aggregate({
-            where: {
-                invoice: { clinicId },
-                paidAt: {
-                    gte: thisYearStart,
-                    lt: thisYearEnd
-                }
-            },
-            _sum: { amount: true }
-        })
+        const date = new Date(payment.paidAt)
+        const year = date.getFullYear()
+        const monthIndex = date.getMonth() // 0-11
+        const amount = Number(payment.amount)
 
-        const lastYearRevenue = await prisma.payment.aggregate({
-            where: {
-                invoice: { clinicId },
-                paidAt: {
-                    gte: lastYearStart,
-                    lt: lastYearEnd
-                }
-            },
-            _sum: { amount: true }
-        })
-
-        chartData.push({
-            month: months[i],
-            thisYear: Number(thisYearRevenue._sum.amount || 0),
-            lastYear: Number(lastYearRevenue._sum.amount || 0)
-        })
+        if (year === currentYear) {
+            chartData[monthIndex].thisYear += amount
+        } else if (year === lastYear) {
+            chartData[monthIndex].lastYear += amount
+        }
     }
 
     return chartData

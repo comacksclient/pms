@@ -52,20 +52,11 @@ export function GlobalSearch({ clinicId }: GlobalSearchProps) {
             try {
                 const [patientsData, appointmentsData] = await Promise.all([
                     getPatients(clinicId, query),
-                    getAppointments(clinicId)
+                    getAppointments(clinicId, { query })
                 ])
 
                 setPatients(patientsData.slice(0, 5))
-
-                // Filter appointments by patient name
-                const filteredAppointments = appointmentsData
-                    .filter((apt: any) => {
-                        const patientName = `${apt.patient.firstName} ${apt.patient.lastName}`.toLowerCase()
-                        return patientName.includes(query.toLowerCase())
-                    })
-                    .slice(0, 5)
-
-                setAppointments(filteredAppointments)
+                setAppointments(appointmentsData.slice(0, 5))
             } catch (error) {
                 console.error("Search failed:", error)
             } finally {

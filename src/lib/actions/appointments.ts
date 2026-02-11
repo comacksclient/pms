@@ -13,29 +13,68 @@ export async function getAppointments(
         endDate?: Date
         doctorId?: string
         status?: string
+        query?: string
     }
 ) {
-    const { doctorId, status, startDate, endDate } = options || {}
+    const { doctorId, status, startDate, endDate, query } = options || {}
 
 
-    const defaultStart = startDate || new Date(new Date().setDate(new Date().getDate() - 30))
-    const defaultEnd = endDate || new Date(new Date().setDate(new Date().getDate() + 30))
+    // If query is present, we want to search ALL appointments unless specific dates are given
+    // If query is NOT present, default to +/- 30 days window
+    let dateFilter: any = {}
+
+    if (startDate || endDate) {
+        dateFilter = {
+            gte: startDate,
+            lte: endDate
+        }
+    } else if (!query) {
+        // Default window only when NOT searching
+        const defaultStart = new Date(new Date().setDate(new Date().getDate() - 30))
+        const defaultEnd = new Date(new Date().setDate(new Date().getDate() + 30))
+        dateFilter = {
+            gte: defaultStart,
+            lte: defaultEnd
+        }
+    }
+
+    const where: any = {
+        clinicId,
+        ...(Object.keys(dateFilter).length > 0 && { scheduledAt: dateFilter }),
+        ...(doctorId && { doctorId }),
+        ...(status && { status: status as "SCHEDULED" | "CONFIRMED" | "SEATED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "NO_SHOW" }),
+    }
+
+    if (query) {
+        where.OR = [
+            {
+                patient: {
+                    OR: [
+                        { firstName: { contains: query, mode: "insensitive" } },
+                        { lastName: { contains: query, mode: "insensitive" } },
+                        { phone: { contains: query } }
+                    ]
+                }
+            },
+            {
+                doctor: {
+                    OR: [
+                        { firstName: { contains: query, mode: "insensitive" } },
+                        { lastName: { contains: query, mode: "insensitive" } }
+                    ]
+                }
+            },
+            { type: { contains: query, mode: "insensitive" } }
+        ]
+    }
 
     const appointments = await prisma.appointment.findMany({
-        where: {
-            clinicId,
-            scheduledAt: {
-                gte: defaultStart,
-                lte: defaultEnd,
-            },
-            ...(doctorId && { doctorId }),
-            ...(status && { status: status as "SCHEDULED" | "CONFIRMED" | "SEATED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "NO_SHOW" }),
-        },
+        where,
         include: {
             patient: true,
             doctor: true,
         },
-        orderBy: { scheduledAt: "asc" },
+        orderBy: { scheduledAt: "desc" }, // Show newest first when searching
     })
 
     return appointments

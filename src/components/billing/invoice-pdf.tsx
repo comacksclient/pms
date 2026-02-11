@@ -37,12 +37,13 @@ const styles = StyleSheet.create({
         maxWidth: '60%',
     },
     clinicName: {
-        fontSize: 24,
+        fontSize: 18, // Reduced to prevent overflow with long names
         fontWeight: "bold",
         color: "#0f172a",
-        marginBottom: 8, // Increased from 4
-        textTransform: "uppercase",
+        marginBottom: 4,
+        textTransform: "uppercase", // Keep uppercase for style
         letterSpacing: 0.5,
+        lineHeight: 1.2, // Ensure multi-line names look good
     },
     clinicDetail: {
         fontSize: 10,
